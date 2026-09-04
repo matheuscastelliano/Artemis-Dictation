@@ -6,7 +6,7 @@
 [![Plataforma](https://img.shields.io/badge/plataforma-Windows%2010%2F11-0078D4)](https://www.microsoft.com/windows)
 [![Licença](https://img.shields.io/badge/licen%C3%A7a-MIT-green)](LICENSE)
 
-🇺🇸 **[Read in English](README.md)**
+🇺🇸 **[Read in English](README.md)**  ·  Interface disponível em **português, inglês e espanhol**.
 
 ```
 atalho  →  grava  →  speech-to-text  →  [modo]  →  clipboard  →  Ctrl+V
@@ -24,6 +24,8 @@ Substitui a digitação por voz nativa do Windows por algo que você controla: s
 
 **A API key não fica em arquivo de configuração.** Vai para o Gerenciador de Credenciais do Windows, cifrada com DPAPI e amarrada à sua conta.
 
+**Fala o seu idioma.** A interface vem em português, inglês e espanhol, e por padrão segue o idioma do seu Windows. Os modos iniciais já nascem com os prompts escritos no idioma escolhido.
+
 ## Requisitos
 
 - Windows 10 ou 11
@@ -33,8 +35,8 @@ Substitui a digitação por voz nativa do Windows por algo que você controla: s
 ## Começando
 
 ```bash
-git clone https://github.com/<seu-usuario>/artemis-dictation.git
-cd artemis-dictation
+git clone https://github.com/matheuscastelliano/Artemis-Dictation.git
+cd Artemis-Dictation
 py -m venv .venv
 .venv\Scripts\python.exe -m pip install -r requirements.txt
 .venv\Scripts\python.exe -m artemis --set-key    # você digita a chave; ela não ecoa
@@ -60,7 +62,7 @@ Aperta uma vez para gravar (beep agudo), fala, aperta de novo para parar (beep g
 
 | Configurações — Geral | Configurações — Modos |
 |---|---|
-| ![Geral](docs/settings-general.png) | ![Modos](docs/settings-modes.png) |
+| ![Geral](docs/settings-general.pt.png) | ![Modos](docs/settings-modes.pt.png) |
 
 ## Criando um modo
 
@@ -125,6 +127,8 @@ artemis/
 ├─ __main__.py          entrada, montagem, CLI
 ├─ app.py               máquina de estados: idle → gravando → processando
 ├─ config.py            config.json / presets.json + padrões
+├─ i18n.py              traduções da interface (pt / en / es)
+├─ startup.py           a entrada de "iniciar com o Windows" no registro
 ├─ presets.py           a dataclass Preset
 ├─ secrets_store.py     Gerenciador de Credenciais do Windows
 ├─ audio.py             captura do microfone (sounddevice)
@@ -146,6 +150,16 @@ Dependências: `openai`, `sounddevice`, `pynput`, `pystray`, `Pillow`, `pypercli
 
 Ícone da bandeja → **Configurações**, ou edite o JSON direto. Tudo mora em `%APPDATA%\ArtemisDictation\`: `config.json`, `presets.json` e um `artemis.log` rotativo.
 
+Vale conhecer:
+
+| Opção | O que faz |
+|---|---|
+| **Idioma da interface** | Português, inglês, espanhol ou Automático (segue o idioma do Windows). |
+| **Indicador na tela** | *Sempre* · *Só em erros* · *Nunca*. Nos três casos o ícone da bandeja continua mudando de cor, então você nunca fica sem retorno. |
+| **Mostrar o texto ditado** | Prévia de 120 caracteres no indicador, ajustável de 40 a 400. |
+| **Iniciar com o Windows** | Registra o Artemis na chave `Run` do seu usuário — sem administrador, sem tarefa agendada. |
+| **Devolver o clipboard anterior** | Desligado por padrão; o porquê está acima. |
+
 Ajustes finos que só existem no arquivo:
 
 | Opção | Padrão | O que faz |
@@ -154,9 +168,9 @@ Ajustes finos que só existem no arquivo:
 | `max_recording_seconds` | `600` | Encerra sozinho uma gravação esquecida. |
 | `min_recording_seconds` | `0.4` | Abaixo disso, considera toque acidental e nem chama a API. |
 
-## Iniciar com o Windows
+## Adicionar um idioma
 
-Aperte `Win+R`, digite `shell:startup` e coloque ali um atalho para `Artemis.cmd`.
+As traduções são um dicionário plano por idioma em [`artemis/i18n.py`](artemis/i18n.py). Copie o bloco `en`, traduza os valores e registre o código em `LANGUAGE_NAMES`. Uma chave faltando cai para o inglês em vez de quebrar, então uma tradução parcial é segura.
 
 ## Gerar um .exe
 

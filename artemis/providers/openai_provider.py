@@ -23,6 +23,7 @@ import logging
 import openai
 
 from ..errors import CredentialsError, TranscriptionError
+from ..i18n import t
 
 log = logging.getLogger(__name__)
 
@@ -80,8 +81,7 @@ class OpenAIProvider:
         text = (text or "").strip()
         if not text:
             raise TranscriptionError(
-                "Nao entendi nada no audio.",
-                "A transcricao voltou vazia. Fale mais perto do microfone.",
+                t("err.empty_transcription"), t("err.empty_transcription.detail")
             )
         return text
 
@@ -155,28 +155,18 @@ class OpenAIProvider:
         """Traduz erros da OpenAI em mensagens que cabem num toast."""
         if isinstance(exc, openai.AuthenticationError):
             return CredentialsError(
-                "API key da OpenAI invalida ou revogada.",
-                "Confira a chave nas configuracoes do Artemis.",
+                t("err.invalid_api_key"), t("err.invalid_api_key.detail")
             )
         if isinstance(exc, openai.PermissionDeniedError):
-            return CredentialsError(
-                "Sua conta nao tem acesso a este modelo.", str(exc)
-            )
+            return CredentialsError(t("err.no_model_access"), str(exc))
         if isinstance(exc, openai.RateLimitError):
-            return TranscriptionError(
-                "Limite de uso da OpenAI atingido. Tente de novo em instantes."
-            )
+            return TranscriptionError(t("err.rate_limit"))
         if isinstance(exc, openai.APITimeoutError):
-            return TranscriptionError(
-                "A OpenAI demorou demais para responder.",
-                "Ditado muito longo ou conexao lenta.",
-            )
+            return TranscriptionError(t("err.timeout"), t("err.timeout.detail"))
         if isinstance(exc, openai.APIConnectionError):
-            return TranscriptionError(
-                "Sem conexao com a OpenAI.", "Verifique sua internet."
-            )
+            return TranscriptionError(t("err.offline"), t("err.offline.detail"))
         if isinstance(exc, openai.APIStatusError):
             return TranscriptionError(
-                f"A OpenAI retornou erro {exc.status_code}.", str(exc)
+                t("err.api_status", status=exc.status_code), str(exc)
             )
-        return TranscriptionError("Falha inesperada ao processar o audio.", str(exc))
+        return TranscriptionError(t("err.unexpected_audio"), str(exc))

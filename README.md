@@ -6,7 +6,7 @@
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-0078D4)](https://www.microsoft.com/windows)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
-🇧🇷 **[Leia em português](README.pt-BR.md)** — the app's interface and default prompts are in Brazilian Portuguese.
+🇧🇷 **[Leia em português](README.pt-BR.md)**  ·  Interface available in **English, Portuguese and Spanish**.
 
 ```
 shortcut  →  record  →  speech-to-text  →  [mode]  →  clipboard  →  Ctrl+V
@@ -16,13 +16,15 @@ It replaces the built-in Windows dictation with something you actually control: 
 
 ## What makes it different
 
-**Modes are configuration, not code.** A mode is a JSON entry with a name, a hotkey, a prompt and a model. Two ship by default — *Transcrever* (faithful) and *Melhorar* (cleaned up) — and adding *Formal*, *Casual*, *Summarize* or *Translate* means editing a file, never touching the pipeline.
+**Modes are configuration, not code.** A mode is a JSON entry with a name, a hotkey, a prompt and a model. Two ship by default — *Transcribe* (faithful) and *Improve* (cleaned up) — and adding *Formal*, *Casual*, *Summarize* or *Translate* means editing a file, never touching the pipeline.
 
 **Your dictation is never lost.** Injecting `Ctrl+V` only guarantees the keystroke was sent — not that a text field received it. So the text stays on the clipboard, the last 10 dictations live in the tray menu, and the on-screen indicator shows a preview of what came out.
 
 **Audio never touches disk.** It is captured to memory as 16 kHz mono PCM and uploaded straight from there. No temp file to leak, none to clean up.
 
 **Your API key is not in a config file.** It goes to the Windows Credential Manager, encrypted with DPAPI and tied to your Windows account.
+
+**It speaks your language.** The interface comes in English, Portuguese and Spanish, and follows your Windows display language by default. The starter modes ship with prompts written in whichever language you land on.
 
 ## Requirements
 
@@ -33,8 +35,8 @@ It replaces the built-in Windows dictation with something you actually control: 
 ## Quick start
 
 ```bash
-git clone https://github.com/<your-user>/artemis-dictation.git
-cd artemis-dictation
+git clone https://github.com/matheuscastelliano/Artemis-Dictation.git
+cd Artemis-Dictation
 py -m venv .venv
 .venv\Scripts\python.exe -m pip install -r requirements.txt
 .venv\Scripts\python.exe -m artemis --set-key    # you type the key; it never echoes
@@ -44,8 +46,8 @@ Then double-click `Artemis.cmd`. A grey dot appears in the system tray.
 
 | Shortcut | Mode | What it does |
 |---|---|---|
-| `Ctrl + Alt + Space` | **Transcrever** | Faithful to your speech. Punctuation, capitalization, proper nouns. No rewriting. |
-| `Ctrl + Alt + 1` | **Melhorar** | Transcribes, then cleans up: drops filler and repetition, improves structure, keeps your tone. |
+| `Ctrl + Alt + Space` | **Transcribe** | Faithful to your speech. Punctuation, capitalization, proper nouns. No rewriting. |
+| `Ctrl + Alt + 1` | **Improve** | Transcribes, then cleans up: drops filler and repetition, improves structure, keeps your tone. |
 
 Press once to start recording (high beep), talk, press again to stop (low beep). The text is pasted for you.
 
@@ -73,8 +75,8 @@ Modes live in `%APPDATA%\ArtemisDictation\presets.json`, and there is an editor 
   "description": "Turns speech into a message for a client or manager",
   "hotkey": "<ctrl>+<alt>+2",
   "trigger": "toggle",
-  "stt_prompt": "Brazilian Portuguese dictation, informal register...",
-  "keywords": ["Azure DevOps", "Red Hat"],
+  "stt_prompt": "Dictation, informal register, product and engineering jargon...",
+  "keywords": ["Kubernetes", "PostgreSQL"],
   "refine": true,
   "system_prompt": "Rewrite the transcript as professional communication...",
   "text_model": null
@@ -83,7 +85,7 @@ Modes live in `%APPDATA%\ArtemisDictation\presets.json`, and there is an editor 
 
 | Field | What it does |
 |---|---|
-| `hotkey` | pynput format: `<ctrl>+<alt>+2`, `<ctrl>+<shift>+d`, `<f9>`. The *Capturar* button writes it for you. |
+| `hotkey` | pynput format: `<ctrl>+<alt>+2`, `<ctrl>+<shift>+d`, `<f9>`. The *Capture* button writes it for you. |
 | `trigger` | `toggle` (press/press) or `hold` (record while held). |
 | `stt_prompt` | Free-form context for the transcription model: how you speak, what about. |
 | `keywords` | Terms the model tends to get wrong, added to the global list. |
@@ -106,7 +108,7 @@ Artemis' keyboard hook sees injected input, so it behaves exactly like a real ke
 
 ## How it works
 
-**Transcription model: `gpt-transcribe`.** OpenAI's current speech-to-text model (July 2026). It cuts `whisper-1`'s word error rate from 40.4% to 19.3% and costs less ($0.0045/min vs $0.006/min) — there is no trade-off. `whisper-1`, `gpt-4o-transcribe` and `gpt-4o-mini-transcribe` are **deprecated and shut down on 2027-02-26**. `gpt-transcribe` also accepts `keywords` and `languages`, which is what fixes proper nouns and English technical terms dropped into Portuguese speech.
+**Transcription model: `gpt-transcribe`.** OpenAI's current speech-to-text model (July 2026). It cuts `whisper-1`'s word error rate from 40.4% to 19.3% and costs less ($0.0045/min vs $0.006/min) — there is no trade-off. `whisper-1`, `gpt-4o-transcribe` and `gpt-4o-mini-transcribe` are **deprecated and shut down on 2027-02-26**. `gpt-transcribe` also accepts `keywords` and `languages`, which is what fixes proper nouns and foreign technical terms dropped into everyday speech.
 
 **Faithful mode makes one API call.** `gpt-transcribe` already punctuates well, so sending the transcript through an LLM would only add latency and the exact risk the mode exists to avoid. Modes that rewrite use `gpt-5.6-luna`, the cheap text model — around US$0.001 per 15-second dictation.
 
@@ -125,6 +127,8 @@ artemis/
 ├─ __main__.py          entry point, wiring, CLI
 ├─ app.py               state machine: idle → recording → processing
 ├─ config.py            config.json / presets.json + defaults
+├─ i18n.py              interface translations (en / pt / es)
+├─ startup.py           the "start with Windows" registry entry
 ├─ presets.py           the Preset dataclass
 ├─ secrets_store.py     Windows Credential Manager
 ├─ audio.py             microphone capture (sounddevice)
@@ -144,7 +148,17 @@ Dependencies: `openai`, `sounddevice`, `pynput`, `pystray`, `Pillow`, `pyperclip
 
 ## Configuration
 
-Tray icon → **Configurações**, or edit the JSON directly. Everything lives in `%APPDATA%\ArtemisDictation\`: `config.json`, `presets.json` and a rotating `artemis.log`.
+Tray icon → **Settings**, or edit the JSON directly. Everything lives in `%APPDATA%\ArtemisDictation\`: `config.json`, `presets.json` and a rotating `artemis.log`.
+
+Worth knowing about:
+
+| Setting | What it does |
+|---|---|
+| **Interface language** | English, Portuguese, Spanish, or Automatic (follows your Windows display language). |
+| **On-screen indicator** | *Always* · *Only on errors* · *Never*. The tray icon still changes colour in all three cases, so you never lose feedback entirely. |
+| **Show the dictated text** | A 120-character preview in the indicator, adjustable from 40 to 400. |
+| **Start with Windows** | Registers Artemis under the current user's `Run` key — no administrator rights, no scheduled task. |
+| **Restore previous clipboard** | Off by default; see above for why. |
 
 Extra knobs that only exist in the file:
 
@@ -154,9 +168,9 @@ Extra knobs that only exist in the file:
 | `max_recording_seconds` | `600` | Stops a forgotten recording on its own. |
 | `min_recording_seconds` | `0.4` | Below this, treats it as an accidental keypress and skips the API call. |
 
-## Start with Windows
+## Adding a language
 
-Press `Win+R`, type `shell:startup`, and drop a shortcut to `Artemis.cmd` there.
+Translations are a single flat dictionary per language in [`artemis/i18n.py`](artemis/i18n.py). Copy the `en` block, translate the values, and register the code in `LANGUAGE_NAMES`. A missing key falls back to English rather than crashing, so a partial translation is safe to ship.
 
 ## Build an .exe
 

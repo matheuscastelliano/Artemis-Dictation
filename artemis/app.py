@@ -18,10 +18,11 @@ from enum import Enum
 from typing import Callable
 
 from . import config as config_module
-from . import output, pipeline
+from . import output, pipeline, startup
 from .audio import AudioRecorder, wav_duration
 from .errors import ArtemisError, CredentialsError
 from .hotkeys import HotkeyManager
+from .i18n import t
 from .presets import Preset
 from .providers.openai_provider import OpenAIProvider
 from .secrets_store import get_api_key
@@ -89,6 +90,13 @@ class AppController:
             self._emit(Status("error", exc.message, exc.detail or ""))
             return
 
+        # A inicializacao com o Windows mora no registro, nao no config:
+        # aplicar aqui mantem os dois em sincronia a cada recarga.
+        try:
+            startup.sync(bool(self.config.get("start_with_windows", False)))
+        except ArtemisError as exc:
+            self._emit(Status("error", exc.message, exc.detail or ""))
+
         size = int(self.config.get("history_size", 10))
         if size != self.history.maxlen:
             self.history = deque(self.history, maxlen=max(0, size))
@@ -107,7 +115,7 @@ class AppController:
             except ArtemisError as exc:
                 problems.append(f"{preset.name}: {exc.message}")
         if problems:
-            self._emit(Status("error", "Atalhos com problema", "; ".join(problems)))
+            self._emit(Status("error", t("err.hotkey_problems"), "; ".join(problems)))
         else:
             self._emit(Status("idle"))
 
@@ -185,13 +193,13 @@ class AppController:
             wav = self._recorder.stop()
         except Exception as exc:
             log.exception("Falha ao encerrar a gravacao")
-            self._reset(Status("error", "Falha ao encerrar a gravacao.", str(exc)))
+            self._reset(Status("error", t("err.recording_stop"), str(exc)))
             return
 
         seconds = wav_duration(wav, self.config["sample_rate"])
         if seconds < self.config["min_recording_seconds"]:
             # Toque acidental no atalho: nem gasta chamada de API.
-            self._reset(Status("idle", "Gravacao curta demais, ignorada."))
+            self._reset(Status("idle", t("status.too_short")))
             return
 
         self._emit(Status("processing", preset.name))
@@ -207,7 +215,7 @@ class AppController:
         self._cancel_max_timer()
         if self._recorder is not None:
             self._recorder.cancel()
-        self._emit(Status("idle", "Gravacao cancelada."))
+        self._emit(Status("idle", t("status.cancelled")))
 
     # -------------------------------------------------------- processamento
 
@@ -238,8 +246,8 @@ class AppController:
                 self._reset(
                     Status(
                         "done",
-                        "Texto no clipboard",
-                        "Nao consegui colar automaticamente: use Ctrl+V.",
+                        t("status.clipboard_only"),
+                        t("status.clipboard_only.detail"),
                         text=result.text,
                     )
                 )
@@ -247,15 +255,14 @@ class AppController:
             self._reset(Status("error", exc.message, exc.detail or ""))
         except Exception as exc:
             log.exception("Falha inesperada no processamento")
-            self._reset(Status("error", "Falha inesperada.", str(exc)))
+            self._reset(Status("error", t("err.unexpected"), str(exc)))
 
     def _ensure_provider(self) -> OpenAIProvider:
         if self._provider is None:
             api_key = get_api_key()
             if not api_key:
                 raise CredentialsError(
-                    "API key da OpenAI nao configurada.",
-                    "Abra as configuracoes do Artemis pelo icone na bandeja.",
+                    t("err.no_api_key"), t("err.no_api_key.detail")
                 )
             self._provider = OpenAIProvider(
                 api_key=api_key,
@@ -282,7 +289,9 @@ class AppController:
         """
         try:
             output.copy(text)
-            self._emit(Status("done", "Copiado", "Cole com Ctrl+V.", text=text))
+            self._emit(
+                Status("done", t("status.copied"), t("status.copied.detail"), text=text)
+            )
         except ArtemisError as exc:
             self._emit(Status("error", exc.message, exc.detail or ""))
 

@@ -26,8 +26,10 @@ import tkinter as tk
 from logging.handlers import RotatingFileHandler
 
 from . import config as config_module
-from . import secrets_store
+from . import i18n, secrets_store
 from .app import AppController, Status
+from .errors import ArtemisError
+from .i18n import t
 from .ui.overlay import Overlay
 from .ui.settings_window import SettingsWindow
 from .ui.tray import Tray
@@ -98,7 +100,7 @@ def cmd_devices() -> int:
     from .audio import list_input_devices
 
     for device in list_input_devices():
-        flag = "  <- padrao" if device["default"] else ""
+        flag = t("cli.default_device") if device["default"] else ""
         print(f"[{device['index']}] {device['name']}{flag}")
     return 0
 
@@ -129,9 +131,7 @@ def run_app() -> int:
         """Roda sempre na main thread."""
         if tray is not None:
             tray.set_status(status.kind, status.message, status.detail)
-        if status.kind == "idle":
-            overlay.hide()
-        else:
+        if _overlay_wanted(controller.config, status.kind):
             limit = int(controller.config.get("overlay_preview_chars", 120))
             overlay.show(
                 status.kind,
@@ -139,6 +139,8 @@ def run_app() -> int:
                 _detail_for(status, limit),
                 _duration_for(status, limit),
             )
+        else:
+            overlay.hide()
 
     def on_status(status: Status) -> None:
         """Chamado de qualquer thread; devolve o trabalho para a main."""
@@ -182,10 +184,7 @@ def run_app() -> int:
         root.after(400, settings.open)
         root.after(
             600,
-            lambda: tray.notify(
-                "Artemis Dictation",
-                "Configure sua API key da OpenAI para comecar.",
-            ),
+            lambda: tray.notify(t("tray.tooltip"), t("tray.notify.no_key")),
         )
 
     try:
@@ -195,15 +194,40 @@ def run_app() -> int:
     return 0
 
 
+def _overlay_wanted(config: dict, kind: str) -> bool:
+    """O indicador flutuante deve aparecer para este estado?
+
+    "idle" nunca aparece. Fora isso, quem manda e overlay_mode: "never"
+    esconde tudo, "errors" deixa passar so os erros - o icone da bandeja
+    continua mudando de cor nos tres casos.
+    """
+    if kind == "idle":
+        return False
+    mode = config.get("overlay_mode", "always")
+    if mode == "never":
+        return False
+    if mode == "errors":
+        return kind == "error"
+    return True
+
+
 def _title_for(status: Status) -> str:
     """Sempre a mensagem; quem monta o titulo e quem cria o Status."""
     if status.kind == "recording":
-        return f"Gravando... ({status.message})" if status.message else "Gravando..."
+        return (
+            t("status.recording_with", mode=status.message)
+            if status.message
+            else t("status.recording")
+        )
     if status.kind == "processing":
-        return f"Processando... ({status.message})" if status.message else "Processando..."
+        return (
+            t("status.processing_with", mode=status.message)
+            if status.message
+            else t("status.processing")
+        )
     if status.kind == "done":
-        return status.message or "Pronto"
-    return status.message or "Erro"
+        return status.message or t("status.done")
+    return status.message or t("status.error")
 
 
 def _detail_for(status: Status, limit: int) -> str:
@@ -239,13 +263,20 @@ def main(argv: list[str] | None = None) -> int:
 
     setup_logging(args.debug)
 
+    # Le o config so para definir o idioma antes da primeira mensagem.
+    # Se ele estiver quebrado, seguimos com o idioma do Windows.
+    try:
+        config_module.load_config()
+    except ArtemisError:
+        i18n.set_language(None)
+
     if args.set_key:
         return cmd_set_key()
     if args.devices:
         return cmd_devices()
 
     if not claim_single_instance():
-        print("O Artemis Dictation ja esta rodando (veja o icone na bandeja).")
+        print(t("cli.already_running"))
         return 1
 
     return run_app()

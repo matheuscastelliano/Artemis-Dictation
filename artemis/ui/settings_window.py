@@ -1,13 +1,17 @@
 """Janela de configuracao (Tkinter, que ja vem com o Python).
 
-Duas abas: Geral (chave, microfone, modelos, comportamento) e Modos (os
-presets). Nada aqui e obrigatorio: tudo tambem pode ser editado direto nos
-JSONs em %APPDATA%/ArtemisDictation. A janela existe para nao precisar.
+Duas abas: Geral (chave, microfone, modelos, interface, comportamento) e
+Modos (os presets). Nada aqui e obrigatorio: tudo tambem pode ser editado
+direto nos JSONs em %APPDATA%/ArtemisDictation. A janela existe para nao
+precisar.
 
 Layout: o rodape com Salvar/Cancelar e empacotado ANTES do conteudo, com
 side="bottom". Sem isso, o Tk encolhe o ultimo widget empacotado quando a
 janela fica pequena - e o botao Salvar era o primeiro a sumir. O conteudo
 das abas rola, entao a janela funciona em qualquer tamanho.
+
+Todo texto passa por i18n.t() no momento de montar a janela. Trocar o idioma
+e salvar fecha a janela; reabrir ja mostra tudo traduzido.
 """
 
 from __future__ import annotations
@@ -19,15 +23,15 @@ from tkinter import messagebox, ttk
 from typing import Callable
 
 from .. import config as config_module
-from .. import secrets_store
+from .. import secrets_store, startup
 from ..audio import list_input_devices
+from ..i18n import AUTO, LANGUAGE_NAMES, t
 from ..presets import Preset, TRIGGERS
 
 log = logging.getLogger(__name__)
 
 _STT_MODELS = ["gpt-transcribe", "gpt-4o-transcribe", "whisper-1"]
 _TEXT_MODELS = ["gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.6-sol"]
-_SYSTEM_DEFAULT = "(padrao do sistema)"
 
 _HINT = "#6b6b70"
 _PAD = 12
@@ -71,8 +75,8 @@ class SettingsWindow:
 
         win = tk.Toplevel(self._root)
         self._win = win
-        win.title("Artemis Dictation - Configuracoes")
-        win.geometry("780x660")
+        win.title(t("cfg.title"))
+        win.geometry("780x680")
         win.minsize(560, 380)
         win.protocol("WM_DELETE_WINDOW", self._close)
         self._apply_style(win)
@@ -82,18 +86,17 @@ class SettingsWindow:
         footer = ttk.Frame(win, padding=(_PAD, 10))
         footer.pack(side="bottom", fill="x")
         ttk.Separator(win).pack(side="bottom", fill="x")
-
-        ttk.Button(footer, text="Salvar", command=self._save, style="Accent.TButton").pack(
-            side="right"
-        )
-        ttk.Button(footer, text="Cancelar", command=self._close).pack(
+        ttk.Button(
+            footer, text=t("cfg.save"), command=self._save, style="Accent.TButton"
+        ).pack(side="right")
+        ttk.Button(footer, text=t("cfg.cancel"), command=self._close).pack(
             side="right", padx=(0, 8)
         )
 
         notebook = ttk.Notebook(win)
         notebook.pack(side="top", fill="both", expand=True, padx=_PAD, pady=(_PAD, 0))
-        notebook.add(self._build_general(notebook), text="  Geral  ")
-        notebook.add(self._build_modes(notebook), text="  Modos  ")
+        notebook.add(self._build_general(notebook), text=t("cfg.tab.general"))
+        notebook.add(self._build_modes(notebook), text=t("cfg.tab.modes"))
 
         if self._presets:
             self._select_preset(0)
@@ -115,7 +118,7 @@ class SettingsWindow:
         except tk.TclError:
             pass  # tema sem suporte; o botao so fica sem destaque
 
-    # ------------------------------------------------------------ scroll
+    # ------------------------------------------------------------ layout
 
     def _scrollable(self, parent) -> ttk.Frame:
         """Area rolavel. Devolve o frame interno onde o conteudo vai."""
@@ -130,14 +133,10 @@ class SettingsWindow:
         canvas.pack(side="left", fill="both", expand=True)
         bar.pack(side="right", fill="y")
 
-        def on_inner(_event=None) -> None:
-            canvas.configure(scrollregion=canvas.bbox("all"))
-
-        def on_canvas(event) -> None:
-            canvas.itemconfigure(window, width=event.width)  # acompanha a largura
-
-        inner.bind("<Configure>", on_inner)
-        canvas.bind("<Configure>", on_canvas)
+        canvas.bind("<Configure>", lambda e: canvas.itemconfigure(window, width=e.width))
+        inner.bind(
+            "<Configure>", lambda _e: canvas.configure(scrollregion=canvas.bbox("all"))
+        )
 
         # A roda do mouse so rola enquanto o ponteiro esta sobre esta area.
         def wheel(event) -> None:
@@ -147,13 +146,13 @@ class SettingsWindow:
         canvas.bind("<Leave>", lambda _e: canvas.unbind_all("<MouseWheel>"))
         return inner
 
-    def _section(self, parent, title: str) -> ttk.Labelframe:
-        frame = ttk.Labelframe(parent, text=title)
+    def _section(self, parent, title_key: str) -> ttk.Labelframe:
+        frame = ttk.Labelframe(parent, text=t(title_key))
         frame.pack(fill="x", expand=False, padx=8, pady=(0, 14))
         frame.columnconfigure(1, weight=1)
         return frame
 
-    def _hint(self, parent, text: str) -> ttk.Label:
+    def _hint(self, parent, text_value: str) -> ttk.Label:
         """Texto de apoio, cinza.
 
         A quebra de linha acompanha a largura do container - e nao a da
@@ -162,7 +161,7 @@ class SettingsWindow:
         vazava e era cortado no meio da palavra.
         """
         label = ttk.Label(
-            parent, text=text, foreground=_HINT, wraplength=420, justify="left"
+            parent, text=text_value, foreground=_HINT, wraplength=420, justify="left"
         )
 
         def refit(event, lbl=label) -> None:
@@ -174,18 +173,32 @@ class SettingsWindow:
         parent.bind("<Configure>", refit, add="+")
         return label
 
-    def _field(self, parent, row: int, label: str, widget, hint: str = "") -> int:
+    def _field(self, parent, row: int, label_key: str, widget, hint_key: str = "") -> int:
         """Uma linha rotulo + campo (+ dica). Devolve a proxima linha."""
-        ttk.Label(parent, text=label).grid(
+        ttk.Label(parent, text=t(label_key)).grid(
             row=row, column=0, sticky="nw", pady=(0, 4), padx=(0, 12)
         )
         widget.grid(row=row, column=1, sticky="ew", pady=(0, 4))
         row += 1
-        if hint:
-            self._hint(parent, hint).grid(row=row, column=1, sticky="w", pady=(0, 10))
+        if hint_key:
+            self._hint(parent, t(hint_key)).grid(
+                row=row, column=1, sticky="w", pady=(0, 10)
+            )
             row += 1
         else:
             parent.grid_rowconfigure(row - 1, pad=6)
+        return row
+
+    def _check(self, parent, row: int, label_key: str, variable, hint_key: str = "") -> int:
+        ttk.Checkbutton(parent, text=t(label_key), variable=variable).grid(
+            row=row, column=0, columnspan=2, sticky="w", pady=(0, 2)
+        )
+        row += 1
+        if hint_key:
+            self._hint(parent, t(hint_key)).grid(
+                row=row, column=0, columnspan=2, sticky="w", padx=(22, 0), pady=(0, 10)
+            )
+            row += 1
         return row
 
     # ------------------------------------------------------------- Geral
@@ -195,110 +208,126 @@ class SettingsWindow:
         body = self._scrollable(page)
 
         # --- OpenAI ------------------------------------------------------
-        openai = self._section(body, "OpenAI")
+        openai = self._section(body, "cfg.section.openai")
         row = 0
         self._api_key_var = tk.StringVar()
         row = self._field(
             openai,
             row,
-            "API key",
+            "cfg.api_key",
             ttk.Entry(openai, textvariable=self._api_key_var, show="•"),
-            f"Guardada no Gerenciador de Credenciais do Windows. "
-            f"Atual: {secrets_store.masked(secrets_store.get_api_key())}. "
-            "Deixe em branco para manter a que ja esta salva.",
         )
+        self._hint(
+            openai,
+            t("cfg.api_key.hint", current=secrets_store.masked(secrets_store.get_api_key())),
+        ).grid(row=row, column=1, sticky="w", pady=(0, 10))
+        row += 1
         self._stt_var = tk.StringVar(value=self._config["stt_model"])
         row = self._field(
             openai,
             row,
-            "Transcricao",
+            "cfg.stt_model",
             ttk.Combobox(openai, textvariable=self._stt_var, values=_STT_MODELS),
-            "whisper-1 e gpt-4o-transcribe sao legados e desligam em 26/02/2027.",
+            "cfg.stt_model.hint",
         )
         self._text_model_var = tk.StringVar(value=self._config["text_model"])
         row = self._field(
             openai,
             row,
-            "Texto",
+            "cfg.text_model",
             ttk.Combobox(openai, textvariable=self._text_model_var, values=_TEXT_MODELS),
-            "Usado so pelos modos com pos-processamento, como o Melhorar.",
+            "cfg.text_model.hint",
         )
 
         # --- Transcricao -------------------------------------------------
-        audio = self._section(body, "Transcricao")
+        audio = self._section(body, "cfg.section.transcription")
         row = 0
         try:
             names = [d["name"] for d in list_input_devices()]
         except Exception:
             names = []
+        self._system_default = t("cfg.system_default")
         self._device_var = tk.StringVar(
-            value=self._config.get("input_device") or _SYSTEM_DEFAULT
+            value=self._config.get("input_device") or self._system_default
         )
         row = self._field(
             audio,
             row,
-            "Microfone",
+            "cfg.microphone",
             ttk.Combobox(
-                audio, textvariable=self._device_var, values=[_SYSTEM_DEFAULT] + names
+                audio,
+                textvariable=self._device_var,
+                values=[self._system_default] + names,
             ),
         )
         self._language_var = tk.StringVar(value=self._config.get("language") or "")
         row = self._field(
             audio,
             row,
-            "Idioma",
+            "cfg.language",
             ttk.Entry(audio, textvariable=self._language_var, width=8),
-            "Codigo de duas letras: pt, en, es. Vazio deixa o modelo detectar.",
+            "cfg.language.hint",
         )
         self._keywords_text = tk.Text(audio, height=6, wrap="word", font=self._mono_font)
         self._keywords_text.insert("1.0", "\n".join(self._config.get("keywords", [])))
         row = self._field(
-            audio,
+            audio, row, "cfg.keywords", self._keywords_text, "cfg.keywords.hint"
+        )
+
+        # --- Interface ---------------------------------------------------
+        interface = self._section(body, "cfg.section.interface")
+        row = 0
+        self._ui_language_var = tk.StringVar(
+            value=LANGUAGE_NAMES.get(self._config.get("ui_language", AUTO), "")
+        )
+        row = self._field(
+            interface,
             row,
-            "Termos",
-            self._keywords_text,
-            "Um por linha. Nomes que a transcricao costuma errar: clientes, "
-            "produtos, jargao. Vale para todos os modos.",
+            "cfg.ui_language",
+            ttk.Combobox(
+                interface,
+                textvariable=self._ui_language_var,
+                values=list(LANGUAGE_NAMES.values()),
+                state="readonly",
+            ),
+            "cfg.ui_language.hint",
         )
 
-        # --- Comportamento -----------------------------------------------
-        behavior = self._section(body, "Comportamento")
-        behavior.columnconfigure(0, weight=1)
-
-        self._beep_var = tk.BooleanVar(
-            value=bool(self._config.get("sound_feedback", True))
+        self._overlay_labels = {
+            "always": t("cfg.overlay.always"),
+            "errors": t("cfg.overlay.errors"),
+            "never": t("cfg.overlay.never"),
+        }
+        self._overlay_var = tk.StringVar(
+            value=self._overlay_labels.get(
+                self._config.get("overlay_mode", "always"),
+                self._overlay_labels["always"],
+            )
         )
-        ttk.Checkbutton(
-            behavior,
-            text="Beep ao iniciar e ao terminar a gravacao",
-            variable=self._beep_var,
-        ).grid(row=0, column=0, sticky="w", pady=(0, 8))
-
-        self._restore_var = tk.BooleanVar(
-            value=bool(self._config.get("restore_clipboard", False))
+        overlay_combo = ttk.Combobox(
+            interface,
+            textvariable=self._overlay_var,
+            values=list(self._overlay_labels.values()),
+            state="readonly",
+            width=20,
         )
-        ttk.Checkbutton(
-            behavior,
-            text="Devolver o clipboard anterior depois de colar",
-            variable=self._restore_var,
-        ).grid(row=1, column=0, sticky="w")
-        self._hint(
-            behavior,
-            "Desligado, o ditado fica no clipboard ate voce copiar outra coisa "
-            "- util quando a colagem nao encontra campo em foco.",
-        ).grid(row=2, column=0, sticky="w", padx=(22, 0), pady=(0, 10))
+        overlay_combo.bind("<<ComboboxSelected>>", lambda _e: self._toggle_preview())
+        row = self._field(
+            interface, row, "cfg.overlay", overlay_combo, "cfg.overlay.hint"
+        )
 
         preview_chars = int(self._config.get("overlay_preview_chars", 120))
         self._preview_var = tk.BooleanVar(value=preview_chars > 0)
         self._preview_chars_var = tk.StringVar(value=str(preview_chars or 120))
-        preview_row = ttk.Frame(behavior)
-        preview_row.grid(row=3, column=0, sticky="w")
-        ttk.Checkbutton(
+        preview_row = ttk.Frame(interface)
+        preview_row.grid(row=row, column=0, columnspan=2, sticky="w")
+        self._preview_check = ttk.Checkbutton(
             preview_row,
-            text="Mostrar o texto ditado no indicador",
+            text=t("cfg.preview"),
             variable=self._preview_var,
-            command=self._toggle_preview_spin,
-        ).pack(side="left")
+            command=self._toggle_preview,
+        )
+        self._preview_check.pack(side="left")
         self._preview_spin = ttk.Spinbox(
             preview_row,
             from_=40,
@@ -308,32 +337,57 @@ class SettingsWindow:
             textvariable=self._preview_chars_var,
         )
         self._preview_spin.pack(side="left", padx=(10, 4))
-        ttk.Label(preview_row, text="caracteres").pack(side="left")
-        self._toggle_preview_spin()
-        self._hint(
+        ttk.Label(preview_row, text=t("cfg.preview.chars")).pack(side="left")
+        row += 1
+        self._hint(interface, t("cfg.preview.hint")).grid(
+            row=row, column=0, columnspan=2, sticky="w", padx=(22, 0), pady=(2, 0)
+        )
+        self._toggle_preview()
+
+        # --- Comportamento -----------------------------------------------
+        behavior = self._section(body, "cfg.section.behavior")
+        behavior.columnconfigure(0, weight=1)
+        row = 0
+        self._beep_var = tk.BooleanVar(
+            value=bool(self._config.get("sound_feedback", True))
+        )
+        row = self._check(behavior, row, "cfg.beep", self._beep_var)
+        self._restore_var = tk.BooleanVar(
+            value=bool(self._config.get("restore_clipboard", False))
+        )
+        row = self._check(
             behavior,
-            "A previa serve para reconhecer o que saiu, nao para reler: o texto "
-            "inteiro fica no clipboard e em 'Ultimos ditados'.",
-        ).grid(row=4, column=0, sticky="w", padx=(22, 0), pady=(2, 0))
+            row,
+            "cfg.restore_clipboard",
+            self._restore_var,
+            "cfg.restore_clipboard.hint",
+        )
+        # Estado real do registro, nao do config: se alguem apagou a entrada
+        # por fora, a caixa precisa refletir o que existe de fato.
+        self._autostart_var = tk.BooleanVar(value=startup.is_enabled())
+        row = self._check(
+            behavior, row, "cfg.autostart", self._autostart_var, "cfg.autostart.hint"
+        )
+        self._hint(
+            behavior, t("cfg.autostart.frozen_hint", command=startup.command())
+        ).grid(row=row, column=0, columnspan=2, sticky="w", padx=(22, 0))
 
         # --- Arquivos ----------------------------------------------------
-        files = self._section(body, "Arquivos de configuracao")
+        files = self._section(body, "cfg.section.files")
         files.columnconfigure(0, weight=1)
         path_entry = ttk.Entry(files)
         path_entry.insert(0, str(config_module.config_dir()))
         path_entry.configure(state="readonly")  # selecionavel, mas nao editavel
         path_entry.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 8))
         ttk.Button(
-            files, text="Abrir pasta", command=self._on_open_folder, width=16
+            files, text=t("cfg.open_folder"), command=self._on_open_folder, width=18
         ).grid(row=1, column=0, sticky="w")
         ttk.Button(
-            files, text="Recarregar do disco", command=self._reload_from_disk, width=20
+            files, text=t("cfg.reload"), command=self._reload_from_disk, width=20
         ).grid(row=1, column=1, sticky="w", padx=(8, 0))
-        self._hint(
-            files,
-            "Use 'Recarregar' depois de editar config.json ou presets.json na "
-            "mao. O log fica em artemis.log, na mesma pasta.",
-        ).grid(row=2, column=0, columnspan=2, sticky="w", pady=(8, 0))
+        self._hint(files, t("cfg.files.hint")).grid(
+            row=2, column=0, columnspan=2, sticky="w", pady=(8, 0)
+        )
         return page
 
     def _reload_from_disk(self) -> None:
@@ -342,10 +396,12 @@ class SettingsWindow:
         self._close()
         self._root.after(50, self.open)
 
-    def _toggle_preview_spin(self) -> None:
-        """O campo de caracteres so faz sentido com a previa ligada."""
+    def _toggle_preview(self) -> None:
+        """A previa so existe se o indicador aparecer em ditados normais."""
+        overlay_on = self._overlay_var.get() == self._overlay_labels["always"]
+        self._preview_check.configure(state="normal" if overlay_on else "disabled")
         self._preview_spin.configure(
-            state="normal" if self._preview_var.get() else "disabled"
+            state="normal" if overlay_on and self._preview_var.get() else "disabled"
         )
 
     # ------------------------------------------------------------- Modos
@@ -355,24 +411,27 @@ class SettingsWindow:
         page.columnconfigure(1, weight=1)
         page.rowconfigure(0, weight=1)
 
-        # --- lista dos modos ---------------------------------------------
         left = ttk.Frame(page)
         left.grid(row=0, column=0, sticky="ns", padx=(0, 14))
         left.rowconfigure(0, weight=1)
         self._listbox = tk.Listbox(
-            left, width=18, exportselection=False, activestyle="none", borderwidth=1,
-            relief="solid", highlightthickness=0,
+            left,
+            width=18,
+            exportselection=False,
+            activestyle="none",
+            borderwidth=1,
+            relief="solid",
+            highlightthickness=0,
         )
         self._listbox.grid(row=0, column=0, columnspan=2, sticky="ns")
         self._listbox.bind("<<ListboxSelect>>", self._on_list_select)
-        ttk.Button(left, text="Novo", width=8, command=self._add_preset).grid(
+        ttk.Button(left, text=t("cfg.mode.new"), width=9, command=self._add_preset).grid(
             row=1, column=0, sticky="ew", pady=(8, 0)
         )
-        ttk.Button(left, text="Remover", width=9, command=self._remove_preset).grid(
-            row=1, column=1, sticky="ew", pady=(8, 0), padx=(4, 0)
-        )
+        ttk.Button(
+            left, text=t("cfg.mode.remove"), width=10, command=self._remove_preset
+        ).grid(row=1, column=1, sticky="ew", pady=(8, 0), padx=(4, 0))
 
-        # --- formulario do modo selecionado ------------------------------
         right_container = ttk.Frame(page)
         right_container.grid(row=0, column=1, sticky="nsew")
         form = ttk.Frame(self._scrollable(right_container), padding=(0, 0, 8, 0))
@@ -381,7 +440,9 @@ class SettingsWindow:
         row = 0
 
         self._name_var = tk.StringVar()
-        row = self._field(form, row, "Nome", ttk.Entry(form, textvariable=self._name_var))
+        row = self._field(
+            form, row, "cfg.mode.name", ttk.Entry(form, textvariable=self._name_var)
+        )
 
         hotkey_row = ttk.Frame(form)
         hotkey_row.columnconfigure(0, weight=1)
@@ -389,23 +450,18 @@ class SettingsWindow:
         ttk.Entry(hotkey_row, textvariable=self._hotkey_var, font=self._mono_font).grid(
             row=0, column=0, sticky="ew"
         )
-        ttk.Button(hotkey_row, text="Capturar", width=10, command=self._capture_hotkey).grid(
-            row=0, column=1, padx=(6, 0)
-        )
+        ttk.Button(
+            hotkey_row, text=t("cfg.mode.capture"), width=11, command=self._capture_hotkey
+        ).grid(row=0, column=1, padx=(6, 0))
         row = self._field(
-            form,
-            row,
-            "Atalho",
-            hotkey_row,
-            "Clique em Capturar e pressione a combinacao, ou digite no formato "
-            "<ctrl>+<alt>+2.",
+            form, row, "cfg.mode.hotkey", hotkey_row, "cfg.mode.hotkey.hint"
         )
 
         self._trigger_var = tk.StringVar()
         row = self._field(
             form,
             row,
-            "Acionamento",
+            "cfg.mode.trigger",
             ttk.Combobox(
                 form,
                 textvariable=self._trigger_var,
@@ -413,56 +469,53 @@ class SettingsWindow:
                 state="readonly",
                 width=12,
             ),
-            "toggle: aperta para gravar, aperta de novo para parar.   "
-            "hold: grava enquanto voce segura - nao funciona pelo botao do "
-            "Logitech, que so envia um toque.",
+            "cfg.mode.trigger.hint",
         )
 
         self._stt_prompt_text = tk.Text(form, height=5, wrap="word")
         row = self._field(
             form,
             row,
-            "Contexto do STT",
+            "cfg.mode.stt_prompt",
             self._stt_prompt_text,
-            "Como e a sua fala e de que assunto ela trata. Ajuda o modelo a "
-            "acertar pontuacao e termos.",
+            "cfg.mode.stt_prompt.hint",
         )
 
         self._refine_var = tk.BooleanVar()
         ttk.Checkbutton(
             form,
-            text="Pos-processar com um LLM depois da transcricao",
+            text=t("cfg.mode.refine"),
             variable=self._refine_var,
             command=self._toggle_refine,
         ).grid(row=row, column=1, sticky="w", pady=(4, 2))
         row += 1
-        self._hint(
-            form,
-            "Desligado, o modo faz uma chamada so: mais rapido, mais barato e "
-            "fiel a fala. Ligue para modos que reescrevem.",
-        ).grid(row=row, column=1, sticky="w", pady=(0, 10))
+        self._hint(form, t("cfg.mode.refine.hint")).grid(
+            row=row, column=1, sticky="w", pady=(0, 10)
+        )
         row += 1
 
         self._preset_model_var = tk.StringVar()
         self._preset_model_combo = ttk.Combobox(
-            form, textvariable=self._preset_model_var, values=[""] + _TEXT_MODELS, width=18
+            form,
+            textvariable=self._preset_model_var,
+            values=[""] + _TEXT_MODELS,
+            width=18,
         )
         row = self._field(
             form,
             row,
-            "Modelo do modo",
+            "cfg.mode.model",
             self._preset_model_combo,
-            "Vazio usa o modelo de texto global.",
+            "cfg.mode.model.hint",
         )
 
         self._system_prompt_text = tk.Text(form, height=8, wrap="word")
         row = self._field(
             form,
             row,
-            "Instrucao do modo",
+            "cfg.mode.system_prompt",
             self._system_prompt_text,
-            "O que fazer com o texto transcrito. Só usada com o "
-            "pos-processamento ligado.",
+            "cfg.mode.system_prompt.hint",
         )
 
         self._refresh_list()
@@ -472,9 +525,7 @@ class SettingsWindow:
         """Sem pos-processamento, modelo e instrucao nao tem efeito."""
         state = "normal" if self._refine_var.get() else "disabled"
         self._preset_model_combo.configure(state=state)
-        self._system_prompt_text.configure(
-            state="normal" if self._refine_var.get() else "disabled"
-        )
+        self._system_prompt_text.configure(state=state)
 
     # ------------------------------------------------- lista e formulario
 
@@ -533,12 +584,12 @@ class SettingsWindow:
         self._commit_form()
         existing = {p.id for p in self._presets}
         index = 1
-        while f"modo{index}" in existing:
+        while f"mode{index}" in existing:
             index += 1
         self._presets.append(
             Preset(
-                id=f"modo{index}",
-                name=f"Novo modo {index}",
+                id=f"mode{index}",
+                name=t("cfg.mode.new_name", n=index),
                 hotkey="",
                 trigger="toggle",
                 stt_prompt=self._presets[0].stt_prompt if self._presets else "",
@@ -549,13 +600,11 @@ class SettingsWindow:
 
     def _remove_preset(self) -> None:
         if self._selected is None or len(self._presets) <= 1:
-            messagebox.showinfo(
-                "Artemis", "Precisa sobrar pelo menos um modo.", parent=self._win
-            )
+            messagebox.showinfo("Artemis", t("dlg.keep_one_mode"), parent=self._win)
             return
         name = self._presets[self._selected].name
         if not messagebox.askyesno(
-            "Artemis", f"Remover o modo '{name}'?", parent=self._win
+            "Artemis", t("dlg.remove_mode", name=name), parent=self._win
         ):
             return
         del self._presets[self._selected]
@@ -566,17 +615,19 @@ class SettingsWindow:
     def _capture_hotkey(self) -> None:
         """Le a proxima combinacao digitada e converte para o formato pynput."""
         dialog = tk.Toplevel(self._win)
-        dialog.title("Capturar atalho")
+        dialog.title(t("cfg.capture.title"))
         dialog.transient(self._win)
         dialog.resizable(False, False)
         dialog.grab_set()
         ttk.Label(
             dialog,
-            text="Pressione a combinacao desejada.",
+            text=t("cfg.capture.prompt"),
             font=self._section_font,
             padding=(30, 22, 30, 4),
         ).pack()
-        ttk.Label(dialog, text="Esc cancela.", foreground=_HINT, padding=(0, 0, 0, 22)).pack()
+        ttk.Label(
+            dialog, text=t("cfg.capture.escape"), foreground=_HINT, padding=(0, 0, 0, 22)
+        ).pack()
         dialog.update_idletasks()
         x = self._win.winfo_rootx() + (self._win.winfo_width() - dialog.winfo_width()) // 2
         y = self._win.winfo_rooty() + 160
@@ -608,15 +659,19 @@ class SettingsWindow:
             if not preset.hotkey:
                 messagebox.showerror(
                     "Artemis",
-                    f"O modo '{preset.name}' esta sem atalho.",
+                    t("dlg.mode_no_hotkey", name=preset.name),
                     parent=self._win,
                 )
                 return
             if preset.hotkey in seen:
                 messagebox.showerror(
                     "Artemis",
-                    f"O atalho {preset.hotkey} esta em '{seen[preset.hotkey]}' e "
-                    f"em '{preset.name}'.",
+                    t(
+                        "dlg.hotkey_taken",
+                        spec=preset.hotkey,
+                        first=seen[preset.hotkey],
+                        second=preset.name,
+                    ),
                     parent=self._win,
                 )
                 return
@@ -625,7 +680,7 @@ class SettingsWindow:
         device = self._device_var.get().strip()
         config = {
             **self._config,
-            "input_device": None if device in ("", _SYSTEM_DEFAULT) else device,
+            "input_device": None if device in ("", self._system_default) else device,
             "stt_model": self._stt_var.get().strip() or "gpt-transcribe",
             "text_model": self._text_model_var.get().strip() or "gpt-5.6-luna",
             "language": self._language_var.get().strip() or None,
@@ -634,9 +689,12 @@ class SettingsWindow:
                 for line in self._get_text(self._keywords_text).splitlines()
                 if line.strip()
             ],
+            "ui_language": self._selected_language(),
+            "overlay_mode": self._selected_overlay_mode(),
+            "overlay_preview_chars": self._preview_chars(),
             "sound_feedback": bool(self._beep_var.get()),
             "restore_clipboard": bool(self._restore_var.get()),
-            "overlay_preview_chars": self._preview_chars(),
+            "start_with_windows": bool(self._autostart_var.get()),
         }
 
         try:
@@ -647,12 +705,12 @@ class SettingsWindow:
             config_module.save_presets(validated)
         except Exception as exc:
             messagebox.showerror(
-                "Artemis", f"Nao consegui salvar: {exc}", parent=self._win
+                "Artemis", t("dlg.save_failed", error=exc), parent=self._win
             )
             return
 
         self._close()
-        self._on_saved()
+        self._on_saved()  # aplica idioma, atalhos e inicializacao automatica
 
     def _close(self) -> None:
         win, self._win = self._win, None
@@ -665,6 +723,21 @@ class SettingsWindow:
             win.destroy()
 
     # ------------------------------------------------------------ helpers
+
+    def _selected_language(self) -> str:
+        """Nome exibido -> codigo do idioma."""
+        chosen = self._ui_language_var.get()
+        for code, name in LANGUAGE_NAMES.items():
+            if name == chosen:
+                return code
+        return AUTO
+
+    def _selected_overlay_mode(self) -> str:
+        chosen = self._overlay_var.get()
+        for mode, label in self._overlay_labels.items():
+            if label == chosen:
+                return mode
+        return "always"
 
     def _preview_chars(self) -> int:
         """0 quando a previa esta desligada; senao o valor do campo."""

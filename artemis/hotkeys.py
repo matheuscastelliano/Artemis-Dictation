@@ -25,6 +25,7 @@ from typing import Callable
 from pynput import keyboard
 
 from .errors import HotkeyError
+from .i18n import t
 
 log = logging.getLogger(__name__)
 
@@ -41,11 +42,10 @@ class _Binding:
             self.keys = set(keyboard.HotKey.parse(spec))
         except ValueError as exc:
             raise HotkeyError(
-                f"Atalho invalido: '{spec}'.",
-                "Use o formato do pynput, ex: <ctrl>+<alt>+<space> ou <ctrl>+<alt>+1.",
+                t("err.hotkey_invalid", spec=spec), t("err.hotkey_invalid.detail")
             ) from exc
         if not self.keys:
-            raise HotkeyError(f"Atalho vazio para '{binding_id}'.")
+            raise HotkeyError(t("err.hotkey_empty", mode=binding_id))
         self.active = False
 
 
@@ -71,8 +71,12 @@ class HotkeyManager:
             for other in self._bindings:
                 if other.keys == binding.keys:
                     raise HotkeyError(
-                        f"O atalho '{spec}' esta em dois modos "
-                        f"('{other.id}' e '{binding_id}')."
+                        t(
+                            "err.hotkey_conflict",
+                            spec=spec,
+                            first=other.id,
+                            second=binding_id,
+                        )
                     )
             self._bindings.append(binding)
 

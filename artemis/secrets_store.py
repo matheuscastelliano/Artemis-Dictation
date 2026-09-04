@@ -14,6 +14,7 @@ import os
 import keyring
 
 from .errors import CredentialsError
+from .i18n import t
 
 SERVICE = "ArtemisDictation"
 USERNAME = "openai_api_key"
@@ -31,10 +32,7 @@ def get_api_key() -> str | None:
 def require_api_key() -> str:
     key = get_api_key()
     if not key:
-        raise CredentialsError(
-            "API key da OpenAI nao configurada.",
-            "Abra as configuracoes do Artemis ou defina OPENAI_API_KEY.",
-        )
+        raise CredentialsError(t("err.no_api_key"), t("err.no_api_key.cli"))
     return key
 
 
@@ -42,10 +40,7 @@ def set_api_key(value: str) -> None:
     try:
         keyring.set_password(SERVICE, USERNAME, value.strip())
     except keyring.errors.KeyringError as exc:
-        raise CredentialsError(
-            "Nao consegui salvar a API key no Gerenciador de Credenciais.",
-            str(exc),
-        ) from exc
+        raise CredentialsError(t("err.keyring_save"), str(exc)) from exc
 
 
 def delete_api_key() -> None:
@@ -60,5 +55,5 @@ def delete_api_key() -> None:
 def masked(key: str | None) -> str:
     """Versao segura para exibir na UI: sk-...a1b2."""
     if not key:
-        return "(nenhuma)"
-    return f"{key[:3]}...{key[-4:]}" if len(key) > 12 else "(definida)"
+        return t("cfg.api_key.none")
+    return f"{key[:3]}...{key[-4:]}" if len(key) > 12 else "***"

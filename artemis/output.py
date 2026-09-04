@@ -21,6 +21,7 @@ import pyperclip
 from pynput import keyboard
 
 from .errors import OutputError
+from .i18n import t
 
 log = logging.getLogger(__name__)
 
@@ -88,7 +89,7 @@ def copy(text: str, attempts: int = 4) -> None:
         except Exception as exc:
             last = exc
             time.sleep(0.05 * (attempt + 1))
-    raise OutputError("Nao consegui copiar o texto para a area de transferencia.", str(last))
+    raise OutputError(t("err.clipboard"), str(last))
 
 
 def read_clipboard() -> str | None:
@@ -106,8 +107,7 @@ def send_paste() -> None:
             _controller.release("v")
     except Exception as exc:
         raise OutputError(
-            "Nao consegui colar na aplicacao ativa.",
-            f"O texto esta no clipboard: use Ctrl+V. ({exc})",
+            t("err.paste"), t("err.paste.detail", error=exc)
         ) from exc
 
 

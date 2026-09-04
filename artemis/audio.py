@@ -18,6 +18,7 @@ import wave
 import sounddevice as sd
 
 from .errors import AudioError
+from .i18n import t
 
 CHANNELS = 1
 DTYPE = "int16"
@@ -30,7 +31,7 @@ def list_input_devices() -> list[dict]:
         devices = sd.query_devices()
         default_index = sd.default.device[0]
     except Exception as exc:  # PortAudio pode falhar de varias formas
-        raise AudioError("Nao consegui listar os dispositivos de audio.", str(exc)) from exc
+        raise AudioError(t("err.mic_list"), str(exc)) from exc
 
     result = []
     for index, dev in enumerate(devices):
@@ -91,12 +92,10 @@ class AudioRecorder:
             self._stream.start()
         except sd.PortAudioError as exc:
             self._stream = None
-            raise AudioError(
-                "Microfone indisponivel ou em uso por outro aplicativo.", str(exc)
-            ) from exc
+            raise AudioError(t("err.mic_busy"), str(exc)) from exc
         except Exception as exc:
             self._stream = None
-            raise AudioError("Nao consegui abrir o microfone.", str(exc)) from exc
+            raise AudioError(t("err.mic_open"), str(exc)) from exc
 
     def stop(self) -> bytes:
         """Encerra a gravacao e devolve o WAV completo em bytes."""

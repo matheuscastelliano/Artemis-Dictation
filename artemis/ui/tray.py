@@ -14,6 +14,7 @@ import pystray
 from PIL import Image, ImageDraw
 
 from ..hotkeys import describe
+from ..i18n import t
 
 log = logging.getLogger(__name__)
 
@@ -25,12 +26,14 @@ _COLORS = {
     "error": (229, 72, 77),
 }
 
-_LABELS = {
-    "idle": "Pronto",
-    "recording": "Gravando...",
-    "processing": "Processando...",
-    "done": "Pronto",
-    "error": "Erro",
+# Traduzidos na hora de exibir, nao aqui: o idioma pode mudar em tempo
+# de execucao e o menu do tray e reconstruido a cada abertura.
+_LABEL_KEYS = {
+    "idle": "status.ready",
+    "recording": "status.recording",
+    "processing": "status.processing",
+    "done": "status.ready",
+    "error": "status.error",
 }
 
 
@@ -62,7 +65,7 @@ class Tray:
     ):
         self._controller = controller
         self._status_kind = "idle"
-        self._status_text = "Pronto"
+        self._status_text = t("status.ready")
         self._icons = {kind: _make_icon(color) for kind, color in _COLORS.items()}
 
         self._on_settings = on_settings
@@ -84,11 +87,11 @@ class Tray:
             label = f"{preset.name}   ({describe(preset.hotkey)})"
             yield pystray.MenuItem(label, self._make_trigger(preset))
         yield pystray.Menu.SEPARATOR
-        yield pystray.MenuItem("Ultimos ditados", pystray.Menu(self._history_items))
+        yield pystray.MenuItem(t("tray.recent"), pystray.Menu(self._history_items))
         yield pystray.Menu.SEPARATOR
-        yield pystray.MenuItem("Configuracoes...", self._on_settings, default=True)
+        yield pystray.MenuItem(t("tray.settings"), self._on_settings, default=True)
         yield pystray.Menu.SEPARATOR
-        yield pystray.MenuItem("Sair", self._on_quit)
+        yield pystray.MenuItem(t("tray.quit"), self._on_quit)
 
     def _make_trigger(self, preset):
         def handler(icon=None, item=None):
@@ -105,12 +108,14 @@ class Tray:
         """
         history = list(self._controller.history)
         if not history:
-            yield pystray.MenuItem("(nenhum ainda)", None, enabled=False)
+            yield pystray.MenuItem(t("tray.recent.empty"), None, enabled=False)
             return
         for text in history:
             yield pystray.MenuItem(_preview(text), self._make_recall(text))
         yield pystray.Menu.SEPARATOR
-        yield pystray.MenuItem("Limpar", lambda: self._controller.clear_history())
+        yield pystray.MenuItem(
+            t("tray.recent.clear"), lambda: self._controller.clear_history()
+        )
 
     def _make_recall(self, text):
         def handler(icon=None, item=None):
@@ -129,12 +134,13 @@ class Tray:
 
     def set_status(self, kind: str, message: str = "", detail: str = "") -> None:
         self._status_kind = kind
-        label = _LABELS.get(kind, "Pronto")
+        label = t(_LABEL_KEYS.get(kind, "status.ready"))
         self._status_text = f"{label} - {message}" if message else label
 
         try:
             self._icon.icon = self._icons.get(kind, self._icons["idle"])
-            self._icon.title = f"Artemis - {self._status_text}"[:127]  # limite do Windows
+            # 128 caracteres e o limite do tooltip da bandeja no Windows.
+            self._icon.title = f"Artemis - {self._status_text}"[:127]
             self._icon.update_menu()
         except Exception:
             log.debug("Nao consegui atualizar o icone da bandeja", exc_info=True)
