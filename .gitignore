@@ -1,0 +1,15 @@
+# Ambiente
+.venv/
+__pycache__/
+*.pyc
+
+# Empacotamento
+build/
+dist/
+*.spec
+
+# Nada de configuracao local no repositorio: a de verdade mora em
+# %APPDATA%\ArtemisDictation e a API key no Gerenciador de Credenciais.
+config.json
+presets.json
+*.log
