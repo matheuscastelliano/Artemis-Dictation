@@ -10,6 +10,7 @@ IDLE.
 from __future__ import annotations
 
 import logging
+import sys
 import threading
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
@@ -333,9 +334,14 @@ class AppController:
 
         def play() -> None:
             try:
-                import winsound
+                if sys.platform == "win32":
+                    import winsound
 
-                winsound.Beep(frequency, 70)
+                    winsound.Beep(frequency, 70)
+                else:
+                    from .linux import beep
+
+                    beep(frequency, 70)
             except Exception:
                 pass  # sem som e um detalhe; nao vale um erro
 

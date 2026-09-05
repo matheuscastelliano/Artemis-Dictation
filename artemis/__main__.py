@@ -69,6 +69,10 @@ def claim_single_instance() -> bool:
     Dois hooks de teclado disputando o mesmo atalho geram gravacoes
     duplicadas e cobranca duplicada na API.
     """
+    if sys.platform != "win32":
+        from .linux import claim_single_instance as _claim
+
+        return _claim()
     try:
         kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
         kernel32.CreateMutexW(None, False, _MUTEX_NAME)
@@ -108,6 +112,11 @@ def cmd_devices() -> int:
 def open_config_folder() -> None:
     path = config_module.config_dir()
     path.mkdir(parents=True, exist_ok=True)
+    if sys.platform != "win32":
+        from .linux import open_folder
+
+        open_folder(path)
+        return
     try:
         os.startfile(path)  # type: ignore[attr-defined]
     except Exception:
