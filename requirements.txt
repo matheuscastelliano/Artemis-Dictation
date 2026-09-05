@@ -1,7 +1,14 @@
 openai>=1.0
 sounddevice>=0.4.6
-pynput>=1.7.6
 pystray>=0.19.5
 Pillow>=10.0
-pyperclip>=1.8.2
 keyring>=24.0
+
+# Windows: hook de teclado WH_KEYBOARD_LL e clipboard via Win32.
+pynput>=1.7.6; sys_platform == "win32"
+pyperclip>=1.8.2; sys_platform == "win32"
+
+# Linux: leitura de /dev/input e injecao por /dev/uinput. O pynput nao serve
+# aqui porque seu backend X11 nao enxerga teclas sob Wayland. O clipboard vai
+# por wl-clipboard/xclip, que sao pacotes do sistema, nao do pip.
+evdev>=1.6; sys_platform == "linux"

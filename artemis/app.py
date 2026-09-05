@@ -76,7 +76,14 @@ class AppController:
 
     def start(self) -> None:
         self.reload()
-        self._hotkeys.start()
+        # No Linux o start() pode falhar por permissao em /dev/input. Isso nao
+        # pode derrubar o app: sem atalho ele ainda serve para abrir as
+        # configuracoes e corrigir o problema, e o erro precisa chegar na UI.
+        try:
+            self._hotkeys.start()
+        except ArtemisError as exc:
+            log.error("Atalhos indisponiveis: %s", exc)
+            self._emit(Status("error", exc.message, exc.detail or ""))
 
     def reload(self) -> None:
         """Recarrega config/presets e reprograma os atalhos.
