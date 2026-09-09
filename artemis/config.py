@@ -58,6 +58,9 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "overlay_preview_chars": 120,
     # Iniciar junto com o Windows (chave Run do usuario atual).
     "start_with_windows": False,
+    # So no Linux: capturar o teclado com exclusividade para que a tecla do
+    # atalho nao chegue tambem na aplicacao em foco. Ver hotkeys_evdev.py.
+    "suppress_hotkeys": True,
 }
 
 

@@ -2,6 +2,8 @@
 
 **Ditado por voz global para Windows.** Aperta um atalho, fala, e o texto aparece no campo onde o cursor está — navegador, WhatsApp Web, Teams, Slack, Discord, Obsidian, VS Code, Word, Azure DevOps.
 
+> **Linux:** as notas da porta (permissoes, supressao de tecla, bandeja) estao em [docs/linux.md](docs/linux.md).
+
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/)
 [![Plataforma](https://img.shields.io/badge/plataforma-Windows%2010%2F11-0078D4)](https://www.microsoft.com/windows)
 [![Licença](https://img.shields.io/badge/licen%C3%A7a-MIT-green)](LICENSE)

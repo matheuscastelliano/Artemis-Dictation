@@ -1,6 +1,7 @@
 """Ponto de entrada do Artemis Dictation.
 
     python -m artemis              # roda o app (bandeja + atalhos globais)
+    python -m artemis --settings   # abre as configuracoes (do app que ja roda)
     python -m artemis --set-key    # grava a API key no Windows (voce digita)
     python -m artemis --devices    # lista os microfones
     python -m artemis --debug      # log detalhado no console
@@ -32,7 +33,7 @@ from .errors import ArtemisError
 from .i18n import t
 from .ui.overlay import Overlay
 from .ui.settings_window import SettingsWindow
-from .ui.tray import Tray
+from .ui.tray import Tray, tray_hosted
 
 log = logging.getLogger("artemis")
 
@@ -123,7 +124,7 @@ def open_config_folder() -> None:
         subprocess.Popen(["explorer", str(path)])
 
 
-def run_app() -> int:
+def run_app(open_settings: bool = False) -> int:
     root = tk.Tk()
     root.withdraw()
     root.title("Artemis Dictation")
@@ -183,11 +184,30 @@ def run_app() -> int:
     )
     tray.run_detached()
 
+    def handle_command(command: str) -> None:
+        """Pedido de uma segunda invocacao do Artemis. Roda na main thread."""
+        log.info("Comando recebido: %s", command)
+        if command == "quit":
+            quit_app()
+        else:  # "settings" e qualquer coisa que nao reconhecemos
+            settings.open()
+
+    if sys.platform != "win32":
+        from .linux import install_desktop_entry, serve_commands
+
+        # Sem isto o app so existe enquanto o terminal que o abriu existir:
+        # nao ha atalho no menu, e a bandeja pode nem estar disponivel.
+        install_desktop_entry()
+        serve_commands(lambda command: root.after(0, handle_command, command))
+
     controller.start()
     log.info(
         "Artemis pronto. Modos: %s",
         ", ".join(f"{p.name} [{p.hotkey}]" for p in controller.presets),
     )
+
+    if open_settings:
+        root.after(300, settings.open)
 
     if not secrets_store.get_api_key():
         root.after(400, settings.open)
@@ -195,6 +215,13 @@ def run_app() -> int:
             600,
             lambda: tray.notify(t("tray.tooltip"), t("tray.notify.no_key")),
         )
+
+    if not tray_hosted():
+        # Sem area de notificacao o icone nao aparece em lugar nenhum, e o
+        # usuario ficaria sem saber se o app subiu. O aviso conta onde ele
+        # esta e como chegar nas configuracoes assim mesmo.
+        log.warning("Sem area de notificacao na sessao; o icone nao vai aparecer.")
+        root.after(900, lambda: tray.notify(t("tray.tooltip"), t("tray.notify.no_tray")))
 
     try:
         root.mainloop()
@@ -265,6 +292,9 @@ def _duration_for(status: Status, limit: int) -> int | None:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="artemis")
+    parser.add_argument(
+        "--settings", action="store_true", help="abre a janela de configuracoes"
+    )
     parser.add_argument("--set-key", action="store_true", help="grava a API key da OpenAI")
     parser.add_argument("--devices", action="store_true", help="lista os microfones")
     parser.add_argument("--debug", action="store_true", help="log detalhado")
@@ -285,10 +315,19 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_devices()
 
     if not claim_single_instance():
+        # Ja ha um Artemis de pe. Em vez de so avisar, pede a ele que mostre
+        # as configuracoes: clicar no atalho do menu com o app rodando tem de
+        # fazer alguma coisa, ainda mais quando nao ha icone na bandeja.
+        if sys.platform != "win32":
+            from .linux import send_command
+
+            if send_command("settings"):
+                print(t("cli.already_running.opened"))
+                return 0
         print(t("cli.already_running"))
         return 1
 
-    return run_app()
+    return run_app(open_settings=args.settings)
 
 
 if __name__ == "__main__":

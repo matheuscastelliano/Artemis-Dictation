@@ -15,6 +15,8 @@ from __future__ import annotations
 
 import ctypes
 import logging
+import os
+import sys
 
 log = logging.getLogger(__name__)
 
@@ -37,12 +39,25 @@ _current = DEFAULT
 
 
 def detect() -> str:
-    """Idioma da interface do Windows, ou o padrao se nao for suportado."""
-    try:
-        langid = ctypes.windll.kernel32.GetUserDefaultUILanguage()
-        return _WINDOWS_PRIMARY.get(langid & 0x3FF, DEFAULT)
-    except Exception:
-        return DEFAULT
+    """Idioma da interface do sistema, ou o padrao se nao for suportado."""
+    if sys.platform == "win32":
+        try:
+            langid = ctypes.windll.kernel32.GetUserDefaultUILanguage()
+            return _WINDOWS_PRIMARY.get(langid & 0x3FF, DEFAULT)
+        except Exception:
+            return DEFAULT
+    # No Linux o idioma esta no ambiente. LANGUAGE vem primeiro e pode trazer
+    # uma lista de preferencias ("pt_BR:pt:en"); os demais trazem um locale
+    # so ("pt_BR.UTF-8"). Sem isto o "Automatico" sempre virava ingles aqui.
+    for name in ("LANGUAGE", "LC_ALL", "LC_MESSAGES", "LANG"):
+        value = os.environ.get(name)
+        if not value or value in ("C", "POSIX"):
+            continue
+        for item in value.split(":"):
+            code = item.split(".")[0].split("@")[0].split("_")[0].lower()
+            if code in _TRANSLATIONS:
+                return code
+    return DEFAULT
 
 
 def set_language(code: str | None) -> str:
@@ -182,7 +197,7 @@ _TRANSLATIONS["en"] = {
     "cfg.preview": "Show the dictated text in the indicator",
     "cfg.preview.chars": "characters",
     "cfg.preview.hint": "The preview is there to recognise what came out, not to re-read it: the full text is on the clipboard and under 'Recent dictations'.",
-    "cfg.autostart": "Start Artemis when Windows starts",
+    "cfg.autostart": "Start Artemis with the system",
     "cfg.autostart.hint": "Adds an entry under the current user only - no administrator rights needed.",
     "cfg.autostart.frozen_hint": "Registered command: {command}",
     "cfg.open_folder": "Open folder",
@@ -238,6 +253,13 @@ _TRANSLATIONS["en"] = {
         "comment of your own; explain what you did.\n\n"
         "Reply with the final text only, no quotes and no preamble."
     ),
+    "cli.already_running.opened": "Artemis Dictation is already running; opened its settings window.",
+    "app.tagline": "Global voice dictation",
+    "desktop.settings": "Settings",
+    "desktop.keywords": "dictation;voice;speech;transcription;",
+    "tray.notify.no_tray": "This session has no system tray, so the icon has nowhere to appear. Open Artemis from the applications menu to reach the settings.",
+    "cfg.suppress": "Keep the shortcut key from reaching the app you are typing in",
+    "cfg.suppress.hint": "Grabs the keyboards that can fire a shortcut, so a dictation key that sends Super+H stops typing an 'h'. Every other key is passed straight through. Linux only.",
 }
 
 # ------------------------------------------------------------- Portugues
@@ -340,7 +362,7 @@ _TRANSLATIONS["pt"] = {
     "cfg.preview": "Mostrar o texto ditado no indicador",
     "cfg.preview.chars": "caracteres",
     "cfg.preview.hint": "A previa serve para reconhecer o que saiu, nao para reler: o texto inteiro fica no clipboard e em 'Ultimos ditados'.",
-    "cfg.autostart": "Iniciar o Artemis junto com o Windows",
+    "cfg.autostart": "Iniciar o Artemis junto com o sistema",
     "cfg.autostart.hint": "Cria uma entrada so para o seu usuario - nao precisa de administrador.",
     "cfg.autostart.frozen_hint": "Comando registrado: {command}",
     "cfg.open_folder": "Abrir pasta",
@@ -395,6 +417,13 @@ _TRANSLATIONS["pt"] = {
         "saudacao, despedida ou comentario seu; explicar o que voce fez.\n\n"
         "Responda apenas com o texto final, sem aspas e sem preambulo."
     ),
+    "cli.already_running.opened": "O Artemis Dictation ja esta rodando; abri a janela de configuracoes dele.",
+    "app.tagline": "Ditado por voz em qualquer aplicativo",
+    "desktop.settings": "Configuracoes",
+    "desktop.keywords": "ditado;voz;fala;transcricao;dictation;",
+    "tray.notify.no_tray": "Esta sessao nao tem area de notificacao, entao o icone nao tem onde aparecer. Abra o Artemis pelo menu de aplicativos para chegar nas configuracoes.",
+    "cfg.suppress": "Impedir que a tecla do atalho chegue no aplicativo",
+    "cfg.suppress.hint": "Captura os teclados capazes de disparar um atalho, para que uma tecla de ditado que manda Super+H pare de digitar um 'h'. Todas as outras teclas passam direto. So no Linux.",
 }
 
 # --------------------------------------------------------------- Espanol
@@ -497,7 +526,7 @@ _TRANSLATIONS["es"] = {
     "cfg.preview": "Mostrar el texto dictado en el indicador",
     "cfg.preview.chars": "caracteres",
     "cfg.preview.hint": "La vista previa sirve para reconocer lo que salio, no para releerlo: el texto completo esta en el portapapeles y en 'Ultimos dictados'.",
-    "cfg.autostart": "Iniciar Artemis junto con Windows",
+    "cfg.autostart": "Iniciar Artemis junto con el sistema",
     "cfg.autostart.hint": "Crea una entrada solo para tu usuario - no requiere administrador.",
     "cfg.autostart.frozen_hint": "Comando registrado: {command}",
     "cfg.open_folder": "Abrir carpeta",
@@ -551,4 +580,11 @@ _TRANSLATIONS["es"] = {
         "comentario tuyo; explicar lo que hiciste.\n\n"
         "Responde solo con el texto final, sin comillas y sin preambulo."
     ),
+    "cli.already_running.opened": "Artemis Dictation ya esta ejecutandose; abri su ventana de configuracion.",
+    "app.tagline": "Dictado por voz global",
+    "desktop.settings": "Configuracion",
+    "desktop.keywords": "dictado;voz;habla;transcripcion;dictation;",
+    "tray.notify.no_tray": "Esta sesion no tiene area de notificacion, asi que el icono no tiene donde aparecer. Abre Artemis desde el menu de aplicaciones para llegar a la configuracion.",
+    "cfg.suppress": "Evitar que la tecla del atajo llegue a la aplicacion",
+    "cfg.suppress.hint": "Captura los teclados capaces de disparar un atajo, para que una tecla de dictado que manda Super+H deje de escribir una 'h'. Las demas teclas pasan directo. Solo en Linux.",
 }

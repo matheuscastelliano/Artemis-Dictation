@@ -80,6 +80,14 @@ class HotkeyManager:
                     )
             self._bindings.append(binding)
 
+    def set_suppression(self, enabled: bool) -> None:
+        """No-op: aqui o atalho sempre chega tambem na aplicacao em foco.
+
+        Existe para o app.py nao precisar saber em qual plataforma esta. O
+        equivalente no Windows seria devolver 1 do hook WH_KEYBOARD_LL, que o
+        pynput nao expoe. So o backend evdev do Linux implementa de verdade.
+        """
+
     def clear(self) -> None:
         with self._lock:
             self._bindings.clear()

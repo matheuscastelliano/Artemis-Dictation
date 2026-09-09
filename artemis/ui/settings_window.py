@@ -17,6 +17,7 @@ e salvar fecha a janela; reabrir ja mostra tudo traduzido.
 from __future__ import annotations
 
 import logging
+import sys
 import tkinter as tk
 from tkinter import font as tkfont
 from tkinter import messagebox, ttk
@@ -362,6 +363,20 @@ class SettingsWindow:
             self._restore_var,
             "cfg.restore_clipboard.hint",
         )
+        # So no Linux: no Windows o hook do pynput nao consegue engolir a
+        # tecla, entao a caixa nao teria efeito nenhum.
+        self._suppress_var = tk.BooleanVar(
+            value=bool(self._config.get("suppress_hotkeys", True))
+        )
+        if sys.platform != "win32":
+            row = self._check(
+                behavior,
+                row,
+                "cfg.suppress",
+                self._suppress_var,
+                "cfg.suppress.hint",
+            )
+
         # Estado real do registro, nao do config: se alguem apagou a entrada
         # por fora, a caixa precisa refletir o que existe de fato.
         self._autostart_var = tk.BooleanVar(value=startup.is_enabled())
@@ -694,6 +709,7 @@ class SettingsWindow:
             "overlay_preview_chars": self._preview_chars(),
             "sound_feedback": bool(self._beep_var.get()),
             "restore_clipboard": bool(self._restore_var.get()),
+            "suppress_hotkeys": bool(self._suppress_var.get()),
             "start_with_windows": bool(self._autostart_var.get()),
         }
 

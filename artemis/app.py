@@ -105,6 +105,8 @@ class AppController:
         except ArtemisError as exc:
             self._emit(Status("error", exc.message, exc.detail or ""))
 
+        self._hotkeys.set_suppression(bool(self.config.get("suppress_hotkeys", True)))
+
         size = int(self.config.get("history_size", 10))
         if size != self.history.maxlen:
             self.history = deque(self.history, maxlen=max(0, size))

@@ -2,6 +2,8 @@
 
 **Global voice dictation for Windows.** Press a shortcut, talk, and the text lands in whatever field your cursor is in — browser, WhatsApp Web, Teams, Slack, Discord, Obsidian, VS Code, Word, Azure DevOps.
 
+> **Linux:** the port notes (permissions, key suppression, tray) live in [docs/linux.md](docs/linux.md).
+
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/)
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-0078D4)](https://www.microsoft.com/windows)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)

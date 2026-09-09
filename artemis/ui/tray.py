@@ -1,30 +1,38 @@
 """Icone na bandeja do sistema.
 
-pystray roda seu proprio message loop, entao vai para uma thread propria
-(run_detached). O Tkinter fica com a main thread. Todo callback daqui que
-mexa em UI precisa voltar para a main thread via root.after().
+pystray roda seu proprio message loop, entao vai para uma thread propria.
+O Tkinter fica com a main thread. Todo callback daqui que mexa em UI precisa
+voltar para a main thread via root.after().
+
+A thread e montada de um jeito em cada plataforma:
+  Windows - run_detached(), que cria a janela escondida e bombeia as
+    mensagens dela sozinho.
+  Linux - run() dentro de uma thread nossa. O backend do pystray no Linux e
+    o AppIndicator, e o run_detached() dele NAO sobe nenhum laco GLib: ele
+    so registra o indicador e volta. Como toda operacao do backend (mostrar
+    o icone, trocar a cor, abrir o menu) e agendada com GObject.idle_add,
+    sem laco nada disso executa - o icone simplesmente nunca aparecia.
+
+E, no Linux, ter o icone pronto nao garante que ele apareca: o GNOME nao
+implementa area de notificacao no Shell. Quem hospeda o icone e a extensao
+AppIndicator; sem ela ativa nao ha onde desenhar. Ver tray_hosted().
 """
 
 from __future__ import annotations
 
 import logging
+import sys
+import threading
 from typing import Callable
 
 import pystray
-from PIL import Image, ImageDraw
 
 from ..hotkeys import describe
 from ..i18n import t
+from .icon import COLORS as _COLORS
+from .icon import make_icon
 
 log = logging.getLogger(__name__)
-
-_COLORS = {
-    "idle": (120, 120, 128),
-    "recording": (229, 72, 77),
-    "processing": (245, 165, 36),
-    "done": (48, 164, 108),
-    "error": (229, 72, 77),
-}
 
 # Traduzidos na hora de exibir, nao aqui: o idioma pode mudar em tempo
 # de execucao e o menu do tray e reconstruido a cada abertura.
@@ -46,13 +54,13 @@ def _preview(text: str, limit: int = 64) -> str:
     return flat.replace("&", "&&")
 
 
-def _make_icon(color: tuple[int, int, int], size: int = 64) -> Image.Image:
-    """Um circulo cheio da cor do estado, com respiro nas bordas."""
-    image = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(image)
-    pad = 6
-    draw.ellipse([pad, pad, size - pad, size - pad], fill=(*color, 255))
-    return image
+def tray_hosted() -> bool:
+    """A sessao tem quem exiba um icone de bandeja?"""
+    if sys.platform == "win32":
+        return True
+    from ..linux import status_notifier_available
+
+    return status_notifier_available()
 
 
 class Tray:
@@ -66,10 +74,11 @@ class Tray:
         self._controller = controller
         self._status_kind = "idle"
         self._status_text = t("status.ready")
-        self._icons = {kind: _make_icon(color) for kind, color in _COLORS.items()}
+        self._icons = {kind: make_icon(color) for kind, color in _COLORS.items()}
 
         self._on_settings = on_settings
         self._on_quit = on_quit
+        self._thread: threading.Thread | None = None
 
         # O menu inteiro e um callable: pystray o reavalia a cada abertura,
         # entao mudar presets.json e recarregar ja muda o menu.
@@ -124,7 +133,14 @@ class Tray:
         return handler
 
     def run_detached(self) -> None:
-        self._icon.run_detached()
+        """Sobe o icone sem tomar a main thread, que e do Tkinter."""
+        if sys.platform == "win32":
+            self._icon.run_detached()
+            return
+        self._thread = threading.Thread(
+            target=self._icon.run, name="artemis-tray", daemon=True
+        )
+        self._thread.start()
 
     def stop(self) -> None:
         try:
