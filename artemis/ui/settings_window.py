@@ -719,7 +719,14 @@ class SettingsWindow:
                 refresh_feedback()
                 if down:
                     return
-                if any(k not in _MODIFIER_KEYSYMS for k in seen):
+                # So Ctrl/Alt/Shift sozinhos nao fecham a captura (evita
+                # atalho global acidental nessas teclas, usadas o tempo
+                # todo). Super/cmd sozinho fecha: e' assim que varias
+                # teclas "especiais" de teclado (Fn, busca, etc.) chegam,
+                # sem tecla companheira nenhuma.
+                has_normal = any(k not in _MODIFIER_KEYSYMS for k in seen)
+                has_cmd = any(_MODIFIER_TOKEN.get(k) == "cmd" for k in seen)
+                if has_normal or has_cmd:
                     schedule_finish()
                 else:
                     seen.clear()  # so modificador(es) foram soltos: tenta de novo
@@ -895,6 +902,10 @@ _XF86_ALIASES = {
 _MODIFIER_KEYSYMS = {
     "Control_L", "Control_R", "Alt_L", "Alt_R",
     "Shift_L", "Shift_R", "Win_L", "Win_R",
+    # No X11/Tk a tecla Super/Windows chega como "Super_L"/"Super_R" (Win_L/
+    # Win_R praticamente nunca aparece na pratica no Linux); Meta_L/Meta_R
+    # aparecem em alguns layouts/teclados no lugar de Alt ou Super.
+    "Super_L", "Super_R", "Meta_L", "Meta_R",
 }
 
 _MODIFIER_TOKEN = {
@@ -902,6 +913,8 @@ _MODIFIER_TOKEN = {
     "Alt_L": "alt", "Alt_R": "alt",
     "Shift_L": "shift", "Shift_R": "shift",
     "Win_L": "cmd", "Win_R": "cmd",
+    "Super_L": "cmd", "Super_R": "cmd",
+    "Meta_L": "cmd", "Meta_R": "cmd",
 }
 _MODIFIER_ORDER = ("ctrl", "alt", "shift", "cmd")
 
