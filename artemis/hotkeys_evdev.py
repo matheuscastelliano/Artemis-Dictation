@@ -107,6 +107,32 @@ for _n in range(1, 25):  # F1..F24
     if _code is not None:
         _NAMED[f"f{_n}"] = (_code,)
 
+# Teclas de midia (play/pause, volume, brilho, wifi/aviao...). Em muitos
+# teclados elas saem de um sub-dispositivo "Consumer Control" separado do
+# alfanumerico (ver _is_keyboard abaixo) - o code em si ja chega certinho
+# via evdev independente disso, so precisa estar no vocabulario de _NAMED.
+# getattr pelo mesmo motivo do KEY_DICTATE: builds antigas do evdev podem
+# nao ter a constante.
+_MEDIA_TOKENS = {
+    "media_playpause": "KEY_PLAYPAUSE",
+    "media_stop": "KEY_STOPCD",
+    "media_next": "KEY_NEXTSONG",
+    "media_prev": "KEY_PREVIOUSSONG",
+    "media_mute": "KEY_MUTE",
+    "media_volume_up": "KEY_VOLUMEUP",
+    "media_volume_down": "KEY_VOLUMEDOWN",
+    "media_brightness_up": "KEY_BRIGHTNESSUP",
+    "media_brightness_down": "KEY_BRIGHTNESSDOWN",
+    "media_wifi": "KEY_WLAN",
+    "media_airplane": "KEY_RFKILL",
+}
+_MEDIA_CODES: dict[str, int] = {}
+for _token, _const in _MEDIA_TOKENS.items():
+    _media_code = getattr(ecodes, _const, None)
+    if _media_code is not None:
+        _NAMED[_token] = (_media_code,)
+        _MEDIA_CODES[_token] = _media_code
+
 _MODIFIER_CODES = frozenset(
     {
         ecodes.KEY_LEFTCTRL,
@@ -691,14 +717,16 @@ def _open_keyboards(skip: set[str] | None = None) -> list[InputDevice]:
 def _is_keyboard(device: InputDevice) -> bool:
     """Teclado de verdade, nao mouse nem sensor.
 
-    Aceita tambem um 'Consumer Control' que carregue a tecla de ditado: em
-    varios teclados as teclas de midia sao um dispositivo separado do
-    alfanumerico.
+    Aceita tambem um 'Consumer Control' que carregue a tecla de ditado ou
+    alguma tecla de midia: em varios teclados essas teclas sao um
+    dispositivo separado do alfanumerico.
     """
     keys = device.capabilities().get(ecodes.EV_KEY, [])
     if not keys:
         return False
-    return ecodes.KEY_A in keys or ecodes.KEY_ESC in keys or KEY_DICTATE in keys
+    if ecodes.KEY_A in keys or ecodes.KEY_ESC in keys or KEY_DICTATE in keys:
+        return True
+    return any(code in keys for code in _MEDIA_CODES.values())
 
 
 def describe(spec: str) -> str:

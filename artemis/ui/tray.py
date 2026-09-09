@@ -92,15 +92,33 @@ class Tray:
     def _menu_items(self):
         yield pystray.MenuItem(self._status_text, None, enabled=False)
         yield pystray.Menu.SEPARATOR
+        # Primeira entrada clicavel: toggle direto, sem precisar achar o
+        # preset certo na lista. E o item "default" (clique unico onde a
+        # plataforma suporta - Windows e GTK puro; no AppIndicator, o caso
+        # mais comum no Linux, qualquer clique so abre o menu mesmo, entao
+        # o ganho ali e so ser sempre o primeiro item, nao precisar de 1
+        # clique a menos).
+        yield pystray.MenuItem(self._toggle_label(), self._toggle, default=True)
+        yield pystray.Menu.SEPARATOR
         for preset in self._controller.presets:
             label = f"{preset.name}   ({describe(preset.hotkey)})"
             yield pystray.MenuItem(label, self._make_trigger(preset))
         yield pystray.Menu.SEPARATOR
         yield pystray.MenuItem(t("tray.recent"), pystray.Menu(self._history_items))
         yield pystray.Menu.SEPARATOR
-        yield pystray.MenuItem(t("tray.settings"), self._on_settings, default=True)
+        yield pystray.MenuItem(t("tray.settings"), self._on_settings)
         yield pystray.Menu.SEPARATOR
         yield pystray.MenuItem(t("tray.quit"), self._on_quit)
+
+    def _toggle_label(self) -> str:
+        if self._status_kind == "recording":
+            return t("tray.toggle.stop")
+        preset = self._controller.presets[0] if self._controller.presets else None
+        return t("tray.toggle.start", name=preset.name if preset else "")
+
+    def _toggle(self, icon=None, item=None) -> None:
+        if self._controller.presets:
+            self._controller.trigger(self._controller.presets[0])
 
     def _make_trigger(self, preset):
         def handler(icon=None, item=None):

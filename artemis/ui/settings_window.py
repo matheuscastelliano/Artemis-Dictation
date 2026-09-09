@@ -26,6 +26,7 @@ from typing import Callable
 from .. import config as config_module
 from .. import secrets_store, startup
 from ..audio import list_input_devices
+from ..hotkeys import describe
 from ..i18n import AUTO, LANGUAGE_NAMES, t
 from ..presets import Preset, TRIGGERS
 
@@ -628,7 +629,12 @@ class SettingsWindow:
         self._select_preset(0)
 
     def _capture_hotkey(self) -> None:
-        """Le a proxima combinacao digitada e converte para o formato pynput."""
+        """Escuta o teclado e acumula o CONJUNTO de teclas seguradas.
+
+        Nao fecha no primeiro <KeyPress>: continua ouvindo ate o usuario
+        soltar todas as teclas, permitindo combinacoes com varias teclas
+        "normais" ao mesmo tempo (ex. h+j+k), nao so modificador+1 tecla.
+        """
         dialog = tk.Toplevel(self._win)
         dialog.title(t("cfg.capture.title"))
         dialog.transient(self._win)
@@ -640,6 +646,11 @@ class SettingsWindow:
             font=self._section_font,
             padding=(30, 22, 30, 4),
         ).pack()
+        feedback = ttk.Label(dialog, text="", foreground=_HINT)
+        feedback.pack()
+        ttk.Label(
+            dialog, text=t("cfg.capture.hint"), foreground=_HINT, padding=(0, 2, 0, 2)
+        ).pack()
         ttk.Label(
             dialog, text=t("cfg.capture.escape"), foreground=_HINT, padding=(0, 0, 0, 22)
         ).pack()
@@ -648,15 +659,87 @@ class SettingsWindow:
         y = self._win.winfo_rooty() + 160
         dialog.geometry(f"+{x}+{y}")
 
-        def on_key(event) -> None:
-            spec = _spec_from_event(event)
-            if spec == "escape":
-                dialog.destroy()
-            elif spec:
-                self._hotkey_var.set(spec)
-                dialog.destroy()
+        # `down` = teclas fisicamente seguradas agora; `seen` = uniao de tudo
+        # que passou por `down` durante a captura (vira a spec final).
+        down: set[str] = set()
+        seen: set[str] = set()
+        pending_release: dict[str, object] = {}
+        state = {"pending_finish": None, "closed": False}
 
-        dialog.bind("<KeyPress>", on_key)
+        def finish(spec: str | None) -> None:
+            if state["closed"]:
+                return
+            state["closed"] = True
+            if spec:
+                self._hotkey_var.set(spec)
+            dialog.destroy()
+
+        def refresh_feedback() -> None:
+            if not seen:
+                feedback.configure(text="")
+                return
+            spec = _spec_from_keys(seen)
+            mark = "" if down else "  ✓"
+            feedback.configure(text=f"{describe(spec)}{mark}")
+
+        def schedule_finish() -> None:
+            token = object()
+            state["pending_finish"] = token
+
+            def do_finish() -> None:
+                if state["pending_finish"] is token:
+                    finish(_spec_from_keys(seen))
+
+            dialog.after(150, do_finish)
+
+        def on_press(event) -> None:
+            keysym = event.keysym
+            if keysym == "Escape":
+                finish(None)
+                return
+            state["pending_finish"] = None
+            pending_release.pop(keysym, None)  # KeyPress novo = era autorepeat
+            if keysym not in down:
+                down.add(keysym)
+                seen.add(keysym)
+                refresh_feedback()
+
+        def on_release(event) -> None:
+            keysym = event.keysym
+            if keysym == "Escape" or keysym not in down:
+                return
+            token = object()
+            pending_release[keysym] = token
+
+            def confirm_release() -> None:
+                if pending_release.get(keysym) is not token:
+                    return  # um KeyPress chegou antes: era autorepeat, ignora
+                pending_release.pop(keysym, None)
+                down.discard(keysym)
+                refresh_feedback()
+                if down:
+                    return
+                if any(k not in _MODIFIER_KEYSYMS for k in seen):
+                    schedule_finish()
+                else:
+                    seen.clear()  # so modificador(es) foram soltos: tenta de novo
+                    refresh_feedback()
+
+            dialog.after(1, confirm_release)
+
+        def on_focus_out(event) -> None:
+            # Perdeu foco com tecla(s) presas (alt-tab etc.): zera em vez de
+            # travar esperando um release que nunca vai chegar aqui.
+            down.clear()
+            seen.clear()
+            pending_release.clear()
+            state["pending_finish"] = None
+            refresh_feedback()
+
+        dialog.bind("<KeyPress>", on_press)
+        dialog.bind("<KeyRelease>", on_release)
+        dialog.bind("<FocusOut>", on_focus_out)
+        dialog.protocol("WM_DELETE_WINDOW", lambda: finish(None))
         dialog.focus_force()
 
     # ------------------------------------------------------------- salvar
@@ -778,12 +861,6 @@ class SettingsWindow:
         widget.configure(state=state)
 
 
-# Tk reporta os modificadores num bitmask; no Windows o Alt costuma vir em
-# 0x20000, mas alguns layouts usam 0x8. Testamos os dois.
-_CONTROL = 0x0004
-_SHIFT = 0x0001
-_ALT = 0x20008
-
 _KEYSYM_ALIASES = {
     "space": "<space>",
     "Return": "<enter>",
@@ -797,32 +874,61 @@ _KEYSYM_ALIASES = {
     "Next": "<page_down>",
 }
 
+# Teclas de midia (XF86...) do X11 -> mesmo nome de token usado em
+# hotkeys_evdev.py (_NAMED). O nome do keysym precisa bater literalmente
+# com a chave usada la; e' o contrato entre os dois arquivos.
+_XF86_ALIASES = {
+    "XF86AudioPlay": "<media_playpause>",
+    "XF86AudioPause": "<media_playpause>",
+    "XF86AudioStop": "<media_stop>",
+    "XF86AudioNext": "<media_next>",
+    "XF86AudioPrev": "<media_prev>",
+    "XF86AudioMute": "<media_mute>",
+    "XF86AudioRaiseVolume": "<media_volume_up>",
+    "XF86AudioLowerVolume": "<media_volume_down>",
+    "XF86MonBrightnessUp": "<media_brightness_up>",
+    "XF86MonBrightnessDown": "<media_brightness_down>",
+    "XF86WLAN": "<media_wifi>",
+    "XF86RFKill": "<media_airplane>",
+}
+
 _MODIFIER_KEYSYMS = {
     "Control_L", "Control_R", "Alt_L", "Alt_R",
     "Shift_L", "Shift_R", "Win_L", "Win_R",
 }
 
+_MODIFIER_TOKEN = {
+    "Control_L": "ctrl", "Control_R": "ctrl",
+    "Alt_L": "alt", "Alt_R": "alt",
+    "Shift_L": "shift", "Shift_R": "shift",
+    "Win_L": "cmd", "Win_R": "cmd",
+}
+_MODIFIER_ORDER = ("ctrl", "alt", "shift", "cmd")
 
-def _spec_from_event(event) -> str:
-    """Evento do Tk -> string de atalho no formato do pynput."""
-    keysym = event.keysym
-    if keysym == "Escape":
-        return "escape"
-    if keysym in _MODIFIER_KEYSYMS:
-        return ""  # so um modificador: espera a tecla principal
 
-    parts = []
-    if event.state & _CONTROL:
-        parts.append("<ctrl>")
-    if event.state & _ALT:
-        parts.append("<alt>")
-    if event.state & _SHIFT:
-        parts.append("<shift>")
+def _spec_from_keys(keys: set[str]) -> str:
+    """Conjunto de keysyms segurados durante a captura -> spec de atalho.
 
-    if keysym in _KEYSYM_ALIASES:
-        parts.append(_KEYSYM_ALIASES[keysym])
-    elif len(keysym) == 1:
-        parts.append(keysym.lower())
-    else:
-        parts.append(f"<{keysym.lower()}>")  # f1..f12, teclas de midia, etc.
+    Substitui o antigo _spec_from_event (que lia so um evento por vez, via
+    bitmask de event.state): aqui os modificadores tambem vem do conjunto
+    de keysyms vistos, entao qualquer numero de teclas "normais" seguradas
+    ao mesmo tempo (ex. h+j+k) e' representado sem depender de um unico
+    evento carregar tudo.
+    """
+    mods = {_MODIFIER_TOKEN[k] for k in keys if k in _MODIFIER_TOKEN}
+    others = []
+    for keysym in keys:
+        if keysym in _MODIFIER_TOKEN:
+            continue
+        if keysym in _KEYSYM_ALIASES:
+            others.append(_KEYSYM_ALIASES[keysym])
+        elif keysym in _XF86_ALIASES:
+            others.append(_XF86_ALIASES[keysym])
+        elif len(keysym) == 1:
+            others.append(keysym.lower())
+        else:
+            others.append(f"<{keysym.lower()}>")  # f1..f12, teclas desconhecidas, etc.
+
+    parts = [f"<{m}>" for m in _MODIFIER_ORDER if m in mods]
+    parts.extend(sorted(others))  # ordem deterministica p/ teclas normais
     return "+".join(parts)
